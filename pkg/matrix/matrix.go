@@ -43,11 +43,11 @@ func Eye(rows int, cols int) *Matrix {
 }
 
 func (mat *Matrix) Tranpose() *Matrix {
-	result := Zeros(mat.Rows, mat.Cols)
+	result := Zeros(mat.Cols, mat.Rows)
 	
 	for i := 0; i < mat.Rows; i++ {
 		for j := 0; j < mat.Cols; j++ {
-			result.Coef[i][j] = mat.Coef[j][i]
+			result.Coef[j][i] = mat.Coef[i][j]
 		}
 	}
 
@@ -133,7 +133,7 @@ func (mat *Matrix) DivideByScalar(scalar float64) (*Matrix, error)  {
 	return result, nil
 }
 
-func (mat *Matrix) ApplyGaussianElimination() {
+func (mat *Matrix) ApplyGaussianElimination(rhs *Matrix) {
 	for i := 0; i < mat.Cols; i++ {
 		pivot := mat.Coef[i][i]
 
@@ -143,6 +143,8 @@ func (mat *Matrix) ApplyGaussianElimination() {
 			for j := i; j < mat.Cols; j++ {
 				mat.Coef[k][j] = mat.Coef[k][j] - mat.Coef[i][j] * f
 			}
+
+			rhs.Coef[k][0] = rhs.Coef[k][0] - rhs.Coef[i][0] * f
 		}
 	}
 }
@@ -248,4 +250,33 @@ func (mat Matrix) Inverse() (*Matrix, error) {
 	}
 
 	return inverse, nil
+}
+
+func BackSubstitution(upperTriangular *Matrix, rhs *Matrix) *Matrix {
+	solutions := Zeros(upperTriangular.Cols, 1)
+
+	for i := upperTriangular.Rows - 1; i >= 0; i-- {
+		solutions.Coef[i][0] = rhs.Coef[i][0]
+
+		for j := i + 1; j < upperTriangular.Cols; j++ {
+			solutions.Coef[i][0] = solutions.Coef[i][0] - upperTriangular.Coef[i][j] * solutions.Coef[j][0]
+		}
+
+		solutions.Coef[i][0] = solutions.Coef[i][0] / upperTriangular.Coef[i][i]
+	}
+
+	return solutions
+}
+
+func LeastSquares(A *Matrix, b *Matrix) *Matrix {
+		At := A.Tranpose()
+
+		AtA, _ := At.Multiply(A)
+		Atb, _ := At.Multiply(b)
+
+		AtA.ApplyGaussianElimination(Atb)
+
+		x_hat := BackSubstitution(AtA, Atb)
+
+		return x_hat
 }
