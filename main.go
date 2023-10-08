@@ -1,50 +1,31 @@
 package main
 
 import (
-	"fmt"
 	"github.com/soaresrl/linalg/pkg/matrix"
 )
 
-func main(){
+func main() {
 	// arr := [][]float64{
 	// 	{1, 4, 7},
 	// 	{2, 5, 8},
 	// 	{3, 6, 10},
 	// }
 	arr := [][]float64{
-		{1, -2},
-		{1, 0},
-		{1, 2},
+		{-1, -1, 1},
+		{1, 3, 3},
+		{-1, -1, 5},
 	}
 
-	solArr := [][]float64{
-		{1},
-		{2},
-		{4},
-	}
+	B := matrix.FromArray(arr)
 
-	mat := matrix.FromArray(arr)
-	solMat := matrix.FromArray(solArr)
+	matrix.QRFactorization(B)
+	// x1_vec := B.Col(0)
 
-	matCopy := matrix.FromArray(arr)
-	solMatCopy := matrix.FromArray(solArr)
-	
+	// hh1 := matrix.Householder(x1_vec)
 
-	fmt.Printf("%v\n", *mat)
-	fmt.Printf("%v\n", *solMat)
+	// fmt.Printf("%v\n", *hh1)
 
-	//L, U := mat.ApplyLUDecomposition()
-	//mat.ApplyGaussianElimination(solMat)
+	// R1, _ := hh1.Multiply(B)
 
-	//x := matrix.BackSubstitution(mat, solMat)
-
-	x_hat := matrix.LeastSquares(matCopy, solMatCopy)
-
-	//x := matrix.BackSubstitution(U, y)
-	//mat.ApplyPartialPivoting()
-
-	//inverse, _ := mat.Inverse()
-
-	//fmt.Printf("%v\n", *x)
-	fmt.Printf("%v\n", *x_hat)
+	//fmt.Printf("%v\n", *R1)
 }
