@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/soaresrl/linalg/pkg/matrix"
 )
 
@@ -18,12 +20,13 @@ func main() {
 
 	B := matrix.FromArray(arr)
 
-	matrix.QRFactorization(B)
+	Q, R := matrix.QRFactorization(B)
 	// x1_vec := B.Col(0)
 
 	// hh1 := matrix.Householder(x1_vec)
 
-	// fmt.Printf("%v\n", *hh1)
+	fmt.Printf("%v\n", *Q)
+	fmt.Printf("%v\n", *R)
 
 	// R1, _ := hh1.Multiply(B)
 

@@ -2,7 +2,6 @@ package matrix
 
 import (
 	"errors"
-	"fmt"
 	"math"
 )
 
@@ -340,17 +339,51 @@ func Householder(vector *Matrix) *Matrix {
 	return H
 }
 
+func Diag(first *Matrix, second *Matrix) *Matrix {
+	m := first.Rows + second.Rows
+	n := first.Cols + second.Cols
+
+	mat := Zeros(m, n)
+
+	for i := 0; i < first.Rows; i++ {
+		for j := 0; j < first.Cols; j++ {
+			mat.Coef[i][j] = first.Coef[i][j]
+		}
+	}
+
+	for i := first.Rows; i < m; i++ {
+		for j := first.Cols; j < n; j++ {
+			mat.Coef[i][j] = second.Coef[i-first.Rows][j-first.Cols]
+		}
+	}
+
+	return mat
+}
+
 func QRFactorization(mat *Matrix) (*Matrix, *Matrix) {
 	m := mat.Rows
 	n := mat.Cols
 
 	p := min(m, n)
 
+	R := mat
+	H := Eye(m, m)
+
 	for i := 0; i < p; i++ {
 		//Get the bottom right matrix
-		bottom_right := mat.SubMatrix(i, i, m-i, n-i)
+		bottom_right := R.SubMatrix(i, i, m-i, n-i)
 
-		fmt.Printf("%v\n", *bottom_right)
+		H_bar := Householder(bottom_right.Col(0))
+		I_i := Eye(i, i)
+
+		H_i := Diag(I_i, H_bar)
+
+		R, _ = H_i.Multiply(R)
+
+		H, _ = H_i.Multiply(H)
 	}
-	return nil, nil
+
+	Q := H.Tranpose()
+
+	return Q, R
 }
