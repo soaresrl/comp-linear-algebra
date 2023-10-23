@@ -11,10 +11,48 @@ type Matrix struct {
 	Cols int
 }
 
+type ComplexMatrix struct {
+	Coef [][]complex128
+	Rows int
+	Cols int
+}
+
 func FromArray(array [][]float64) *Matrix {
 	result := &Matrix{Coef: array, Rows: len(array), Cols: len(array[0])}
 
 	return result
+}
+
+func Copy(dst *Matrix, src *Matrix) error {
+	if dst.Cols != src.Cols || dst.Rows != src.Rows {
+		return errors.New("Matrices dimension must match")
+	}
+
+	for i := 0; i < src.Rows; i++ {
+		for j := 0; j < src.Cols; j++ {
+			dst.Coef[i][j] = src.Coef[i][j]
+		}
+	}
+
+	return nil
+}
+
+/*
+Returns the maximum coefficient
+of the matrix (mat)
+*/
+func Max(mat *Matrix) float64 {
+	value := math.Inf(-1)
+
+	for i := 0; i < mat.Rows; i++ {
+		for j := 0; j < mat.Cols; j++ {
+			if mat.Coef[i][j] > value {
+				value = mat.Coef[i][j]
+			}
+		}
+	}
+
+	return value
 }
 
 func Zeros(rows int, cols int) *Matrix {
@@ -25,6 +63,24 @@ func Zeros(rows int, cols int) *Matrix {
 	}
 
 	mat := &Matrix{Coef: result, Rows: rows, Cols: cols}
+
+	return mat
+}
+
+func Ones(rows int, cols int) *Matrix {
+	result := make([][]float64, rows)
+
+	for i := range result {
+		result[i] = make([]float64, cols)
+	}
+
+	mat := &Matrix{Coef: result, Rows: rows, Cols: cols}
+
+	for i := 0; i < rows; i++ {
+		for j := 0; j < cols; j++ {
+			mat.Coef[i][j] = 1.0
+		}
+	}
 
 	return mat
 }
@@ -43,6 +99,17 @@ func Eye(rows int, cols int) *Matrix {
 	return mat
 }
 
+func (mat *Matrix) Norm() float64 {
+	var sum float64
+	sum = 0
+
+	for i := 0; i < mat.Rows; i++ {
+		sum += Dot(mat.Row(i), mat.Row(i))
+	}
+
+	return math.Sqrt(sum)
+}
+
 // Returns the column i as a *Matrix
 func (mat *Matrix) Col(i int) *Matrix {
 	col := Zeros(mat.Rows, 1)
@@ -52,6 +119,14 @@ func (mat *Matrix) Col(i int) *Matrix {
 	}
 
 	return col
+}
+
+// Returns the row i as a *Matrix
+func (mat *Matrix) Row(i int) *Matrix {
+	arr := [][]float64{mat.Coef[i][0:]}
+	row := FromArray(arr)
+
+	return row
 }
 
 func (mat *Matrix) Tranpose() *Matrix {
@@ -108,7 +183,7 @@ func (mat *Matrix) SubMatrix(rowStart, colStart, rowSize, colSize int) *Matrix {
 
 func (mat *Matrix) Add(other *Matrix) (*Matrix, error) {
 	if mat.Cols != other.Cols || mat.Rows != other.Rows {
-		return nil, errors.New("Incompatible matrices")
+		return nil, errors.New("incompatible matrices")
 	}
 
 	result := Zeros(mat.Rows, other.Cols)
@@ -124,7 +199,7 @@ func (mat *Matrix) Add(other *Matrix) (*Matrix, error) {
 
 func (mat *Matrix) Subtract(other *Matrix) (*Matrix, error) {
 	if mat.Cols != other.Cols || mat.Rows != other.Rows {
-		return nil, errors.New("Incompatible matrices")
+		return nil, errors.New("incompatible matrices")
 	}
 
 	result := Zeros(mat.Rows, other.Cols)
@@ -152,7 +227,7 @@ func (mat *Matrix) MultiplyByScalar(scalar float64) (*Matrix, error) {
 
 func (mat *Matrix) DivideByScalar(scalar float64) (*Matrix, error) {
 	if scalar == 0.0 {
-		return nil, errors.New("Cannot divide by zero.")
+		return nil, errors.New("cannot divide by zero.")
 	}
 
 	result := Zeros(mat.Rows, mat.Cols)
@@ -184,7 +259,13 @@ func (mat *Matrix) ApplyGaussianElimination(rhs *Matrix) {
 
 func (mat *Matrix) ApplyLUDecomposition() (*Matrix, *Matrix) {
 	L := Eye(mat.Rows, mat.Cols)
-	U := *mat
+	U := Zeros(mat.Rows, mat.Cols)
+
+	err := Copy(U, mat)
+
+	if err != nil {
+		return nil, nil
+	}
 
 	for i := 0; i < mat.Cols; i++ {
 		pivot := mat.Coef[i][i]
@@ -199,7 +280,7 @@ func (mat *Matrix) ApplyLUDecomposition() (*Matrix, *Matrix) {
 		}
 	}
 
-	return L, &U
+	return L, U
 }
 
 func (mat *Matrix) ApplyPartialPivoting() {
@@ -229,7 +310,14 @@ func (mat *Matrix) ApplyPartialPivoting() {
 	}
 }
 
-func (mat Matrix) Inverse() (*Matrix, error) {
+func (matrix *Matrix) Inverse() (*Matrix, error) {
+	mat := Zeros(matrix.Rows, matrix.Cols)
+	err := Copy(mat, matrix)
+
+	if err != nil {
+		return nil, errors.New("couldn't copy matrix")
+	}
+
 	inverse := Eye(mat.Rows, mat.Cols)
 
 	for i := 0; i < mat.Cols; i++ {
@@ -296,6 +384,22 @@ func BackSubstitution(upperTriangular *Matrix, rhs *Matrix) *Matrix {
 		}
 
 		solutions.Coef[i][0] = solutions.Coef[i][0] / upperTriangular.Coef[i][i]
+	}
+
+	return solutions
+}
+
+func ForwardSubstitution(lowerTriangular *Matrix, rhs *Matrix) *Matrix {
+	solutions := Zeros(lowerTriangular.Cols, 1)
+
+	for i := 0; i < rhs.Rows; i++ {
+		solutions.Coef[i][0] = rhs.Coef[i][0]
+
+		for j := 0; j < i; j++ {
+			solutions.Coef[i][0] = solutions.Coef[i][0] - lowerTriangular.Coef[i][j]*solutions.Coef[j][0]
+		}
+
+		solutions.Coef[i][0] = solutions.Coef[i][0] / lowerTriangular.Coef[i][i]
 	}
 
 	return solutions
@@ -386,4 +490,45 @@ func QRFactorization(mat *Matrix) (*Matrix, *Matrix) {
 	Q := H.Tranpose()
 
 	return Q, R
+}
+
+func PowerMethod(mat *Matrix, n int) (*Matrix, float64) {
+	q_0 := Ones(mat.Rows, 1)
+
+	q_k := q_0
+
+	var lambda_k float64
+
+	for i := 0; i < n; i++ {
+		z_k, _ := mat.Multiply(q_k)
+
+		lambda_k = Max(z_k)
+		q_k, _ = z_k.MultiplyByScalar(1 / lambda_k)
+	}
+
+	return q_k, lambda_k
+}
+
+func InversePowerMethod(mat *Matrix, n int) (*Matrix, float64) {
+	q_0 := Ones(mat.Rows, 1)
+
+	q_k := q_0
+
+	var lambda_k float64
+
+	L, U := mat.ApplyLUDecomposition()
+
+	for i := 0; i < n; i++ {
+		//z_k, _ := mat.Multiply(q_k)
+		temp_k := ForwardSubstitution(L, q_k)
+		q_k = BackSubstitution(U, temp_k)
+
+		lambda_k = Max(q_k)
+
+		q_k, _ = q_k.MultiplyByScalar(1 / lambda_k)
+
+		//q_k, _ = q_k.MultiplyByScalar(1 / q_k.Norm())
+	}
+
+	return q_k, lambda_k
 }
