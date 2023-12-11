@@ -2,8 +2,18 @@ package matrix
 
 import (
 	"errors"
+	"fmt"
 	"math"
+	"sync"
 )
+
+const tol = 0.001
+
+type IMatrix interface {
+	At(i, j int) any
+	Size() (int, int)
+	Transpose() IMatrix
+}
 
 type Matrix struct {
 	Coef [][]float64
@@ -11,37 +21,39 @@ type Matrix struct {
 	Cols int
 }
 
-type ComplexMatrix struct {
-	Coef [][]complex128
-	Rows int
-	Cols int
-}
+func NewRealMatrix(rows, cols int) *Matrix {
+	result := &Matrix{Rows: rows, Cols: cols, Coef: make([][]float64, rows)}
 
-func FromArray(array [][]float64) *Matrix {
-	result := &Matrix{Coef: array, Rows: len(array), Cols: len(array[0])}
+	for i := 0; i < result.Rows; i++ {
+		result.Coef[i] = make([]float64, result.Cols)
+	}
 
 	return result
 }
 
-func Copy(dst *Matrix, src *Matrix) error {
-	if dst.Cols != src.Cols || dst.Rows != src.Rows {
-		return errors.New("Matrices dimension must match")
-	}
+func (mat *Matrix) FromArray(array [][]float64) {
+	mat.Coef = array
+}
 
-	for i := 0; i < src.Rows; i++ {
-		for j := 0; j < src.Cols; j++ {
-			dst.Coef[i][j] = src.Coef[i][j]
+func (mat *Matrix) Copy() *Matrix {
+	dst := Matrix{Cols: mat.Cols, Rows: mat.Rows, Coef: make([][]float64, mat.Rows)}
+
+	for i := 0; i < mat.Rows; i++ {
+		dst.Coef[i] = make([]float64, mat.Cols)
+
+		for j := 0; j < mat.Cols; j++ {
+			dst.Coef[i][j] = mat.Coef[i][j]
 		}
 	}
 
-	return nil
+	return &dst
 }
 
 /*
 Returns the maximum coefficient
 of the matrix (mat)
 */
-func Max(mat *Matrix) float64 {
+func (mat *Matrix) Max() float64 {
 	value := math.Inf(-1)
 
 	for i := 0; i < mat.Rows; i++ {
@@ -123,10 +135,56 @@ func (mat *Matrix) Col(i int) *Matrix {
 
 // Returns the row i as a *Matrix
 func (mat *Matrix) Row(i int) *Matrix {
-	arr := [][]float64{mat.Coef[i][0:]}
-	row := FromArray(arr)
+	result := NewRealMatrix(1, mat.Cols)
 
-	return row
+	arr := [][]float64{mat.Coef[i][0:]}
+	result.FromArray(arr)
+
+	return result
+}
+
+func (mat *Matrix) SwitchRow(first, second int) {
+	var temp float64
+	for i := 0; i < mat.Cols; i++ {
+		temp = mat.Coef[first][i]
+		mat.Coef[first][i] = mat.Coef[second][i]
+
+		mat.Coef[second][i] = temp
+	}
+}
+
+func (mat *Matrix) SwitchColumn(first, second int) {
+	var temp float64
+	for i := 0; i < mat.Rows; i++ {
+		temp = mat.Coef[i][first]
+		mat.Coef[i][first] = mat.Coef[i][second]
+
+		mat.Coef[i][second] = temp
+	}
+}
+
+func PermutationMatrixRow(n, first, second int) *Matrix {
+	mat := Eye(n, n)
+
+	mat.Coef[first][first] = 0
+	mat.Coef[first][second] = 1
+
+	mat.Coef[second][second] = 0
+	mat.Coef[second][first] = 1
+
+	return mat
+}
+
+func PermutationMatrixCol(n, first, second int) *Matrix {
+	mat := Eye(n, n)
+
+	mat.Coef[first][first] = 0
+	mat.Coef[first][second] = 1
+
+	mat.Coef[second][second] = 0
+	mat.Coef[second][first] = 1
+
+	return mat
 }
 
 func (mat *Matrix) Tranpose() *Matrix {
@@ -227,7 +285,7 @@ func (mat *Matrix) MultiplyByScalar(scalar float64) (*Matrix, error) {
 
 func (mat *Matrix) DivideByScalar(scalar float64) (*Matrix, error) {
 	if scalar == 0.0 {
-		return nil, errors.New("cannot divide by zero.")
+		return nil, errors.New("cannot divide by zero")
 	}
 
 	result := Zeros(mat.Rows, mat.Cols)
@@ -259,13 +317,7 @@ func (mat *Matrix) ApplyGaussianElimination(rhs *Matrix) {
 
 func (mat *Matrix) ApplyLUDecomposition() (*Matrix, *Matrix) {
 	L := Eye(mat.Rows, mat.Cols)
-	U := Zeros(mat.Rows, mat.Cols)
-
-	err := Copy(U, mat)
-
-	if err != nil {
-		return nil, nil
-	}
+	U := mat.Copy()
 
 	for i := 0; i < mat.Cols; i++ {
 		pivot := mat.Coef[i][i]
@@ -310,13 +362,122 @@ func (mat *Matrix) ApplyPartialPivoting() {
 	}
 }
 
-func (matrix *Matrix) Inverse() (*Matrix, error) {
-	mat := Zeros(matrix.Rows, matrix.Cols)
-	err := Copy(mat, matrix)
+func (matrix *Matrix) CompletePivoting(rhs *Matrix) *Matrix {
+	A := matrix.Copy()
+	b := rhs.Copy()
 
-	if err != nil {
-		return nil, errors.New("couldn't copy matrix")
+	n := matrix.Rows
+	Q := Eye(n, n)
+
+	for i := 0; i < n; i++ {
+		mi := i
+		lambda := i
+
+		max := A.Coef[i][i]
+		for l := i; l < n; l++ {
+			for k := i; k < n; k++ {
+				if math.Abs(A.Coef[l][k]) > max {
+					mi = l
+					lambda = k
+
+					max = math.Abs(A.Coef[l][k])
+				}
+			}
+		}
+
+		A.SwitchRow(i, mi)
+		b.SwitchRow(i, mi)
+
+		A.SwitchColumn(i, lambda)
+		Q, _ = Q.Multiply(PermutationMatrixCol(n, i, lambda))
+
+		for k := i + 1; k < n; k++ {
+			f := A.Coef[k][i] / A.Coef[i][i]
+
+			for j := i; j < n; j++ {
+				A.Coef[k][j] -= A.Coef[i][j] * f
+			}
+			b.Coef[k][0] -= b.Coef[i][0] * f
+		}
 	}
+
+	solution := BackSubstitution(A, b)
+
+	solution, _ = Q.Multiply(solution)
+
+	return solution
+}
+
+func (matrix *Matrix) RREF() (*Matrix, int, int) {
+	A := matrix.Copy()
+
+	for i := 0; i < A.Rows; i++ {
+		pivot := 0.0
+		var col int = 0
+
+		// Search for pivot
+		for j := 0; j < A.Cols; j++ {
+			if A.Coef[i][j] != 0.0 {
+				pivot = A.Coef[i][j]
+				col = j
+				break
+			}
+		}
+
+		if pivot != 0.0 {
+			for j := col; j < A.Cols; j++ {
+				if math.Abs(A.Coef[i][j]) < tol {
+					A.Coef[i][j] = 0.0
+					continue
+				}
+				A.Coef[i][j] = A.Coef[i][j] / pivot
+			}
+		}
+
+		for k := i + 1; k < A.Rows; k++ {
+			coef := A.Coef[k][col]
+
+			for j := 0; j < A.Cols; j++ {
+				A.Coef[k][j] -= coef * A.Coef[i][j]
+			}
+		}
+	}
+
+	for i := A.Rows - 1; i >= 0; i-- {
+		col := 0
+		for j := 0; j < A.Cols; j++ {
+			if A.Coef[i][j] == 1.0 {
+				col = j
+				break
+			}
+		}
+
+		for k := 0; k < i; k++ {
+			coef := A.Coef[k][col]
+
+			for j := 0; j < A.Cols; j++ {
+				A.Coef[k][j] -= coef * A.Coef[i][j]
+			}
+		}
+	}
+
+	rank := 0
+
+	for i := 0; i < A.Rows; i++ {
+		for j := 0; j < A.Cols; j++ {
+			if A.Coef[i][j] != 0 {
+				rank++
+				break
+			}
+		}
+	}
+
+	nullSpaceeDim := A.Cols - rank
+	return A, rank, nullSpaceeDim
+}
+
+func (matrix *Matrix) Inverse() (*Matrix, error) {
+	mat := matrix.Copy()
 
 	inverse := Eye(mat.Rows, mat.Cols)
 
@@ -502,7 +663,7 @@ func PowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	for i := 0; i < n; i++ {
 		z_k, _ := mat.Multiply(q_k)
 
-		lambda_k = Max(z_k)
+		lambda_k = z_k.Max()
 		q_k, _ = z_k.MultiplyByScalar(1 / lambda_k)
 	}
 
@@ -523,7 +684,7 @@ func InversePowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 		temp_k := ForwardSubstitution(L, q_k)
 		q_k = BackSubstitution(U, temp_k)
 
-		lambda_k = Max(q_k)
+		lambda_k = q_k.Max()
 
 		q_k, _ = q_k.MultiplyByScalar(1 / lambda_k)
 
@@ -531,4 +692,159 @@ func InversePowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	}
 
 	return q_k, lambda_k
+}
+
+func (mat *Matrix) QRGramSchmidt() (*Matrix, *Matrix) {
+	n := mat.Rows
+	m := mat.Cols
+
+	Q := NewRealMatrix(n, n)
+	R := NewRealMatrix(n, m)
+
+	for k := 0; k < m; k++ {
+		for i := 0; i < n; i++ {
+			Q.Coef[i][k] = mat.Coef[i][k]
+
+			for j := 0; j < k; j++ {
+				R.Coef[j][k] = Dot(mat.Col(k), Q.Col(j))
+
+				Q.Coef[i][k] -= Q.Coef[i][j] * R.Coef[j][k]
+			}
+		}
+
+		R.Coef[k][k] = Q.Col(k).Norm()
+
+		if R.Coef[k][k] == 0.0 {
+			panic("matrix is singular")
+		}
+
+		for i := 0; i < n; i++ {
+			Q.Coef[i][k] /= R.Coef[k][k]
+		}
+	}
+
+	return Q, R
+}
+
+func (mat *Matrix) Jacobi(rhs *Matrix) *Matrix {
+	n := mat.Cols
+
+	x_k := Ones(n, 1)
+	x_k_1 := Zeros(n, 1)
+
+	stopCriteria := 20
+	for k := 0; k < stopCriteria; k++ {
+		for i := 0; i < n; i++ {
+			var sum float64
+			sum = 0
+			for j := 0; j < n; j++ {
+				if i != j {
+					sum += mat.Coef[i][j] * x_k.Coef[j][0]
+				}
+			}
+
+			if mat.Coef[i][i] < tol && mat.Coef[i][i] > -tol {
+				fmt.Println("The diagonal has zero entries.")
+				return nil
+			}
+			x_k_1.Coef[i][0] = (1 / mat.Coef[i][i]) * (rhs.Coef[i][0] - sum)
+		}
+
+		x_k = x_k_1.Copy()
+	}
+
+	return x_k
+}
+
+/**
+* Solves the linear systems of equation
+* The main diagonal should have non-zero entries
+ */
+func (mat *Matrix) JacobiParallel(rhs *Matrix) *Matrix {
+	n := mat.Cols
+
+	var wg sync.WaitGroup
+
+	x_k := Ones(n, 1)
+	x_k_1 := Zeros(n, 1)
+
+	stopCriteria := 100000
+
+	for k := 0; k < stopCriteria; k++ {
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func(i int) {
+
+				var sum float64
+				sum = 0
+				for j := 0; j < n; j++ {
+					if i != j {
+						sum += mat.Coef[i][j] * x_k.Coef[j][0]
+					}
+				}
+
+				x_k_1.Coef[i][0] = (1 / mat.Coef[i][i]) * (rhs.Coef[i][0] - sum)
+
+				wg.Done()
+			}(i)
+		}
+
+		x_k = x_k_1.Copy()
+	}
+
+	wg.Wait()
+
+	return x_k
+}
+
+func (mat *Matrix) GaussSeidel(rhs *Matrix) *Matrix {
+	stopCriteria := 20
+	n := mat.Cols
+
+	sol_k := Ones(n, 1)
+
+	for k := 0; k < stopCriteria; k++ {
+		for i := 0; i < n; i++ {
+			var previousSum float64
+			previousSum = 0.0
+			for j := 0; j < i; j++ {
+				previousSum += mat.Coef[i][j] * sol_k.Coef[j][0]
+			}
+
+			for j := i + 1; j < n; j++ {
+				previousSum += mat.Coef[i][j] * sol_k.Coef[j][0]
+			}
+
+			sol_k.Coef[i][0] = (1.0 / mat.Coef[i][i]) * (rhs.Coef[i][0] - previousSum)
+		}
+	}
+
+	return sol_k
+}
+
+func (mat *Matrix) SOR(rhs *Matrix) *Matrix {
+	stopCriteria := 20
+	n := mat.Cols
+
+	w := 1.2
+
+	sol_k := Ones(n, 1)
+
+	for k := 0; k < stopCriteria; k++ {
+		for i := 0; i < n; i++ {
+			var previousSum float64
+			previousSum = 0.0
+			for j := 0; j < i; j++ {
+				previousSum += mat.Coef[i][j] * sol_k.Coef[j][0]
+			}
+
+			for j := i + 1; j < n; j++ {
+				previousSum += mat.Coef[i][j] * sol_k.Coef[j][0]
+			}
+
+			sol_k.Coef[i][0] = (1.0-w)*sol_k.Coef[i][0] + w*(1.0/mat.Coef[i][i])*(rhs.Coef[i][0]-previousSum)
+		}
+	}
+
+	return sol_k
 }
