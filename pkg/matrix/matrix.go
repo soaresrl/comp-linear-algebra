@@ -8,7 +8,7 @@ import (
 )
 
 const tol = 0.001
-const debug = true
+const debug = false
 
 type IMatrix interface {
 	At(i, j int) any
@@ -230,6 +230,25 @@ func (mat *Matrix) Multiply(other *Matrix) (*Matrix, error) {
 	return result, nil
 }
 
+func (mat *Matrix) MultiplyComplex(other *ComplexMatrix) (*ComplexMatrix, error) {
+	if mat.Cols != other.Rows {
+		return nil, errors.New("incompatible matrices")
+	}
+
+	result := NewComplex(mat.Rows, other.Cols)
+	result = result.Zeros(mat.Rows, other.Cols)
+
+	for i := 0; i < mat.Rows; i++ {
+		for j := 0; j < other.Cols; j++ {
+			for k := 0; k < other.Rows; k++ {
+				result.Coef[i][j] += complex(mat.Coef[i][k], 0.0) * other.Coef[k][j]
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func Dot(first *Matrix, second *Matrix) float64 {
 	var value float64
 
@@ -284,12 +303,42 @@ func (mat *Matrix) Subtract(other *Matrix) (*Matrix, error) {
 	return result, nil
 }
 
+func (mat *Matrix) SubtractComplexMatrix(other *ComplexMatrix) (*ComplexMatrix, error) {
+	if mat.Cols != other.Cols || mat.Rows != other.Rows {
+		return nil, errors.New("incompatible matrices")
+	}
+
+	result := NewComplex(mat.Rows, other.Cols)
+	result = result.Zeros(mat.Rows, other.Cols)
+
+	for i := 0; i < mat.Rows; i++ {
+		for j := 0; j < mat.Cols; j++ {
+			result.Coef[i][j] = complex(mat.Coef[i][j], 0.0) - other.Coef[i][j]
+		}
+	}
+
+	return result, nil
+}
+
 func (mat *Matrix) MultiplyByScalar(scalar float64) (*Matrix, error) {
 	result := Zeros(mat.Rows, mat.Cols)
 
 	for i := 0; i < mat.Rows; i++ {
 		for j := 0; j < mat.Cols; j++ {
 			result.Coef[i][j] = mat.Coef[i][j] * scalar
+		}
+	}
+
+	return result, nil
+}
+
+func (mat *Matrix) MultiplyByComplexNumber(scalar complex128) (*ComplexMatrix, error) {
+	result := NewComplex(mat.Rows, mat.Cols)
+	result = result.Zeros(mat.Rows, mat.Cols)
+
+	for i := 0; i < mat.Rows; i++ {
+		for j := 0; j < mat.Cols; j++ {
+			result.Coef[i][j] = complex(mat.Coef[i][j], 0.0) * scalar
 		}
 	}
 
@@ -851,7 +900,7 @@ func (mat *Matrix) SymmetricEigenValuesBad() *Matrix {
 // Calculates the EigenValues of a matrix. Using householder
 // method and calculates the eigenvalues using the Block Upper Triangular.
 // Returns the diagonal complex matrix with the eigenvalues.
-func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *Matrix) {
+func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *ComplexMatrix) {
 	A := mat.Copy()
 	Q := Eye(mat.Rows, mat.Rows)
 
@@ -859,7 +908,7 @@ func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *Matrix) {
 
 	C = C.Zeros(A.Rows, A.Cols)
 
-	Hessen_k, H := A.HouseholderTridiagonalization()
+	Hessen_k, _ := A.HouseholderTridiagonalization()
 
 	for i := 0; i < 20; i++ {
 		Q_k, R := Hessen_k.QRGramSchmidt()
@@ -874,6 +923,7 @@ func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *Matrix) {
 		Hessen_k.Print()
 	}
 
+	// Extract the eigen values for each Block Upper Triangular matrix
 	for i := 0; i < A.Cols; i += 2 {
 		if i == A.Cols-1 {
 			l := complex(Hessen_k.Coef[i][i], 0.0)
@@ -903,7 +953,33 @@ func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *Matrix) {
 		C.Coef[i+1][i+1] = l_2
 	}
 
-	P, _ := H.Multiply(Q)
+	P := NewComplex(A.Rows, A.Cols)
+	P = P.Zeros(A.Rows, A.Cols)
+
+	for i := 0; i < C.Rows; i++ {
+		l_mat, _ := Eye(C.Rows, C.Cols).MultiplyByComplexNumber(C.Coef[i][i])
+
+		B, _ := A.SubtractComplexMatrix(l_mat)
+
+		q := NewComplex(B.Cols, 1)
+		q = q.Zeros(B.Cols, 1)
+
+		x_i := B.CompletePivoting(q)
+
+		if debug {
+			fmt.Println("--- Eigenvector(", i, ")  ---")
+			x_i.Print()
+		}
+
+		for j := 0; j < x_i.Rows; j++ {
+			P.Coef[j][i] = x_i.Coef[j][0]
+		}
+	}
+
+	if debug {
+		fmt.Println("--- Eigenvectors ---")
+		P.Print()
+	}
 
 	return C, P
 }

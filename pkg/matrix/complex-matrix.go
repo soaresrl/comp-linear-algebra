@@ -50,9 +50,11 @@ func (mat *ComplexMatrix) FromArray(array [][]complex128) *ComplexMatrix {
 }
 
 func (mat *ComplexMatrix) Copy() *ComplexMatrix {
-	dst := ComplexMatrix{Cols: mat.Cols, Rows: mat.Rows}
+	dst := ComplexMatrix{Cols: mat.Cols, Rows: mat.Rows, Coef: make([][]complex128, mat.Rows)}
 
 	for i := 0; i < mat.Rows; i++ {
+		dst.Coef[i] = make([]complex128, mat.Cols)
+
 		for j := 0; j < mat.Cols; j++ {
 			dst.Coef[i][j] = mat.Coef[i][j]
 		}
@@ -106,7 +108,8 @@ func (mat *ComplexMatrix) Row(i int) *ComplexMatrix {
 }
 
 func (mat *ComplexMatrix) Tranpose() *ComplexMatrix {
-	result := &ComplexMatrix{Rows: mat.Cols, Cols: mat.Rows}
+	result := NewComplex(mat.Cols, mat.Rows)
+	result = result.Zeros(mat.Cols, mat.Rows)
 
 	for i := 0; i < mat.Rows; i++ {
 		for j := 0; j < mat.Cols; j++ {
@@ -225,6 +228,110 @@ func (mat *ComplexMatrix) DivideByScalar(scalar float64) (*ComplexMatrix, error)
 	}
 
 	return result, nil
+}
+
+func (matrix *ComplexMatrix) RREF() *ComplexMatrix {
+	A := matrix.Copy()
+
+	for i := 0; i < A.Rows; i++ {
+		pivot := complex(0.0, 0.0)
+		var col int = 0
+
+		// Search for pivot
+		for j := 0; j < A.Cols; j++ {
+			if A.Coef[i][j] != 0.0 {
+				pivot = A.Coef[i][j]
+				col = j
+				break
+			}
+		}
+
+		if cmplx.Abs(pivot) != 0.0 {
+			for j := col; j < A.Cols; j++ {
+				if cmplx.Abs(A.Coef[i][j]) < tol {
+					A.Coef[i][j] = complex(0.0, 0.0)
+					continue
+				}
+				A.Coef[i][j] = A.Coef[i][j] / pivot
+			}
+		}
+
+		for k := i + 1; k < A.Rows; k++ {
+			coef := A.Coef[k][col]
+
+			for j := 0; j < A.Cols; j++ {
+				A.Coef[k][j] -= coef * A.Coef[i][j]
+			}
+		}
+	}
+
+	return A
+}
+
+func (mat *ComplexMatrix) SwitchRow(first, second int) {
+	var temp complex128
+	for i := 0; i < mat.Cols; i++ {
+		temp = mat.Coef[first][i]
+		mat.Coef[first][i] = mat.Coef[second][i]
+
+		mat.Coef[second][i] = temp
+	}
+}
+
+func (mat *ComplexMatrix) SwitchColumn(first, second int) {
+	var temp complex128
+	for i := 0; i < mat.Rows; i++ {
+		temp = mat.Coef[i][first]
+		mat.Coef[i][first] = mat.Coef[i][second]
+
+		mat.Coef[i][second] = temp
+	}
+}
+
+func (matrix *ComplexMatrix) CompletePivoting(rhs *ComplexMatrix) *ComplexMatrix {
+	A := matrix.Copy()
+	b := rhs.Copy()
+
+	n := matrix.Rows
+	Q := Eye(n, n)
+
+	for i := 0; i < n; i++ {
+		mi := i
+		lambda := i
+
+		max := cmplx.Abs(A.Coef[i][i])
+		for l := i; l < n; l++ {
+			for k := i; k < n; k++ {
+				if cmplx.Abs(A.Coef[l][k]) > max {
+					mi = l
+					lambda = k
+
+					max = cmplx.Abs(A.Coef[l][k])
+				}
+			}
+		}
+
+		A.SwitchRow(i, mi)
+		b.SwitchRow(i, mi)
+
+		A.SwitchColumn(i, lambda)
+		Q, _ = Q.Multiply(PermutationMatrixCol(n, i, lambda))
+
+		for k := i + 1; k < n; k++ {
+			f := A.Coef[k][i] / A.Coef[i][i]
+
+			for j := i; j < n; j++ {
+				A.Coef[k][j] -= A.Coef[i][j] * f
+			}
+			b.Coef[k][0] -= b.Coef[i][0] * f
+		}
+	}
+
+	solution := A.BackSubstitution(b)
+
+	solution, _ = Q.MultiplyComplex(solution)
+
+	return solution
 }
 
 // func (mat *Matrix) ApplyGaussianElimination(rhs *Matrix) {
@@ -359,21 +466,27 @@ func (mat *ComplexMatrix) DivideByScalar(scalar float64) (*ComplexMatrix, error)
 // 	return inverse, nil
 // }
 
-// func BackSubstitution(upperTriangular *Matrix, rhs *Matrix) *Matrix {
-// 	solutions := Zeros(upperTriangular.Cols, 1)
+func (upperTriangular *ComplexMatrix) BackSubstitution(rhs *ComplexMatrix) *ComplexMatrix {
+	solutions := NewComplex(upperTriangular.Cols, 1)
+	solutions = solutions.Zeros(upperTriangular.Cols, 1)
 
-// 	for i := upperTriangular.Rows - 1; i >= 0; i-- {
-// 		solutions.Coef[i][0] = rhs.Coef[i][0]
+	for i := upperTriangular.Rows - 1; i >= 0; i-- {
+		solutions.Coef[i][0] = rhs.Coef[i][0]
 
-// 		for j := i + 1; j < upperTriangular.Cols; j++ {
-// 			solutions.Coef[i][0] = solutions.Coef[i][0] - upperTriangular.Coef[i][j]*solutions.Coef[j][0]
-// 		}
+		if cmplx.Abs(upperTriangular.Coef[i][i]) < tol {
+			solutions.Coef[i][0] = complex(1.0, 0.0)
+			continue
+		}
 
-// 		solutions.Coef[i][0] = solutions.Coef[i][0] / upperTriangular.Coef[i][i]
-// 	}
+		for j := i + 1; j < upperTriangular.Cols; j++ {
+			solutions.Coef[i][0] = solutions.Coef[i][0] - upperTriangular.Coef[i][j]*solutions.Coef[j][0]
+		}
 
-// 	return solutions
-// }
+		solutions.Coef[i][0] = solutions.Coef[i][0] / upperTriangular.Coef[i][i]
+	}
+
+	return solutions
+}
 
 // func ForwardSubstitution(lowerTriangular *Matrix, rhs *Matrix) *Matrix {
 // 	solutions := Zeros(lowerTriangular.Cols, 1)

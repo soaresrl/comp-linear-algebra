@@ -63,7 +63,13 @@ func TestEigenAsymm() {
 
 	A.FromArray(arr)
 
-	A.ASymmetricEigenValues()
+	values, vectors := A.ASymmetricEigenValues()
+
+	fmt.Println("--- Eigenvalues ---")
+	values.Print()
+
+	fmt.Println("--- Eigenvectors ---")
+	vectors.Print()
 }
 
 func TestQR() {
