@@ -26,7 +26,7 @@ func TestRREF() {
 	fmt.Printf("Dimension of Null(A): %d\n", nullDim)
 }
 
-func TestEigen() {
+func TestEigenSym() {
 	A := matrix.NewRealMatrix(2, 2)
 
 	// arr := [][]float64{
@@ -52,11 +52,60 @@ func TestEigen() {
 	//A.SimmetricEigenValues()
 }
 
+func TestEigenAsymm() {
+	A := matrix.NewRealMatrix(3, 3)
+
+	arr := [][]float64{
+		{3, 4, -2},
+		{1, 4, -1},
+		{2, 6, -1},
+	}
+
+	A.FromArray(arr)
+
+	A.ASymmetricEigenValues()
+}
+
+func TestQR() {
+	A := matrix.NewRealMatrix(2, 3)
+
+	arr := [][]float64{
+		{30, 6, 5},
+		{6, 30, 9},
+	}
+
+	A.FromArray(arr)
+
+	Q, R := A.QRFactorization()
+
+	fmt.Println("--- QR Gram-Schimdt ---")
+	fmt.Println("Q Matrix:")
+	Q.Print()
+	fmt.Println("R Matrix:")
+	R.Print()
+
+	Q, R = A.QRFactorization()
+
+	fmt.Println("--- QR Householder ---")
+	fmt.Println("Q Matrix:")
+	Q.Print()
+	fmt.Println("R Matrix:")
+	R.Print()
+
+	fmt.Println("--- Original A ---")
+	A.Print()
+
+	A_fac, _ := Q.Multiply(R)
+	fmt.Println("--- A = QR ---")
+	A_fac.Print()
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	//TestRREF()
-	TestEigen()
+	//TestQR()
+	TestEigenAsymm()
 	// arr := [][]float64{
 	// 	{1, 4, 7},
 	// 	{2, 5, 8},

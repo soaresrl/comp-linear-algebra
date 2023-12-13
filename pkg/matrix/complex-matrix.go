@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/cmplx"
 )
@@ -10,6 +11,36 @@ type ComplexMatrix struct {
 	Coef [][]complex128
 	Rows int
 	Cols int
+}
+
+func NewComplex(rows, columns int) *ComplexMatrix {
+	return &ComplexMatrix{
+		Rows: rows,
+		Cols: columns,
+		Coef: make([][]complex128, rows),
+	}
+}
+
+func (mat *ComplexMatrix) Print() {
+	m := mat.Rows
+	n := mat.Cols
+
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			fmt.Printf("%.2f \t", mat.Coef[i][j])
+		}
+		fmt.Println()
+	}
+}
+
+func (mat *ComplexMatrix) Zeros(rows int, cols int) *ComplexMatrix {
+	result := make([][]complex128, rows)
+
+	for i := range result {
+		mat.Coef[i] = make([]complex128, cols)
+	}
+
+	return mat
 }
 
 func (mat *ComplexMatrix) FromArray(array [][]complex128) *ComplexMatrix {

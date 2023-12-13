@@ -8,6 +8,7 @@ import (
 )
 
 const tol = 0.001
+const debug = true
 
 type IMatrix interface {
 	At(i, j int) any
@@ -47,6 +48,18 @@ func (mat *Matrix) Copy() *Matrix {
 	}
 
 	return &dst
+}
+
+func (mat *Matrix) Print() {
+	m := mat.Rows
+	n := mat.Cols
+
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			fmt.Printf("%.2f \t", mat.Coef[i][j])
+		}
+		fmt.Println()
+	}
 }
 
 /*
@@ -581,25 +594,33 @@ func LeastSquares(A *Matrix, b *Matrix) *Matrix {
 
 // Compute the Householder matrix
 // H = I - 2uuᵀ/uᵀu -> Hx = v (reflected)
-func Householder(vector *Matrix) *Matrix {
-	v_norm := math.Sqrt(Dot(vector, vector))
+func HouseholderQR(vector *Matrix, j int) *Matrix {
+	n := vector.Rows
 
-	e_1 := Zeros(vector.Rows, 1)
-	e_1.Coef[0][0] = 1.0
+	v := Zeros(vector.Rows, 1)
+	w := Zeros(vector.Rows, 1)
 
-	v_norm_e1, _ := e_1.MultiplyByScalar(v_norm)
+	v_norm := math.Sqrt(Dot(v, v))
 
-	u, _ := vector.Subtract(v_norm_e1)
+	for i := j; i < n; i++ {
+		v.Coef[i][0] = vector.Coef[i][0]
+	}
 
-	u_norm := math.Sqrt(Dot(u, u))
+	if v.Coef[j][0] > 0.0 {
+		v_norm = -v_norm
+	}
 
-	v_1, _ := u.MultiplyByScalar(1 / u_norm)
+	w.Coef[j][0] = v_norm
 
-	v1_v1_t, _ := v_1.Multiply(v_1.Tranpose())
+	N, _ := v.Subtract(w)
 
-	v1_v1_t_2, _ := v1_v1_t.MultiplyByScalar(2.0)
+	N, _ = N.MultiplyByScalar(1 / N.Norm())
 
-	H, _ := Eye(vector.Rows, vector.Rows).Subtract(v1_v1_t_2)
+	n_n_t, _ := N.Multiply(N.Tranpose())
+
+	n_n_t_2, _ := n_n_t.MultiplyByScalar(2.0)
+
+	H, _ := Eye(vector.Rows, vector.Rows).Subtract(n_n_t_2)
 
 	return H
 }
@@ -629,34 +650,9 @@ func HouseholderK(vector *Matrix, k int) *Matrix {
 	return H
 }
 
-// Compute the Householder matrix
-// H = I - 2uuᵀ/uᵀu -> Hx = v (reflected)
-func HouseholderK2(vector *Matrix, k int) *Matrix {
-	v_norm := math.Sqrt(Dot(vector, vector))
-
-	e_1 := Zeros(vector.Rows, 1)
-
-	for i := 0; i <= k; i++ {
-		e_1.Coef[i][0] = 1.0
-	}
-
-	v_norm_e1, _ := e_1.MultiplyByScalar(v_norm)
-
-	u, _ := vector.Subtract(v_norm_e1)
-
-	u_norm := math.Sqrt(Dot(u, u))
-
-	v_1, _ := u.MultiplyByScalar(1 / u_norm)
-
-	v1_v1_t, _ := v_1.Multiply(v_1.Tranpose())
-
-	v1_v1_t_2, _ := v1_v1_t.MultiplyByScalar(2.0)
-
-	H, _ := Eye(vector.Rows, vector.Rows).Subtract(v1_v1_t_2)
-
-	return H
-}
-
+// Calculates the a tridiagonalized (or Hessenberg if not symmetric) matrix using Householder
+// The returned values are the tridiagonal (Hessenberg) Matrix and the accumulated Householder
+// transformations H1.H2...Hn-2, respectively
 func (mat *Matrix) HouseholderTridiagonalization() (*Matrix, *Matrix) {
 	A := mat.Copy()
 
@@ -700,34 +696,37 @@ func Diag(first *Matrix, second *Matrix) *Matrix {
 	return mat
 }
 
-func QRFactorization(mat *Matrix) (*Matrix, *Matrix) {
+// Calculates the QR decomposition of a Matrix using Householder
+// The returned values are the orthonormal Q(m,m) and R(m, n)
+// such that A = QR
+func (mat *Matrix) QRFactorization() (*Matrix, *Matrix) {
 	m := mat.Rows
 	n := mat.Cols
 
 	p := min(m, n)
 
-	R := mat
-	H := Eye(m, m)
+	R := mat.Copy()
+	Q := Eye(m, m)
 
-	for i := 0; i < p; i++ {
-		//Get the bottom right matrix
-		bottom_right := R.SubMatrix(i, i, m-i, n-i)
+	for i := 0; i < p-1; i++ {
+		Q_j_t := HouseholderQR(R.Col(i), i)
 
-		H_bar := Householder(bottom_right.Col(0))
-		I_i := Eye(i, i)
+		if debug {
+			fmt.Println("Householder (", i, ")")
+			Q_j_t.Print()
+		}
 
-		H_i := Diag(I_i, H_bar)
+		R, _ = Q_j_t.Multiply(R)
 
-		R, _ = H_i.Multiply(R)
-
-		H, _ = H_i.Multiply(H)
+		Q, _ = Q.Multiply(Q_j_t)
 	}
-
-	Q := H.Tranpose()
 
 	return Q, R
 }
 
+// Calculates the largest eigenvalue of a Matrix and the
+// eigenvector associated with it using Power Iterations.
+// Returns the eigentvector and the eigenvalue, respectively.
 func PowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	q_0 := Ones(mat.Rows, 1)
 
@@ -745,6 +744,9 @@ func PowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	return q_k, lambda_k
 }
 
+// Calculates the smallest eigenvalue of a Matrix and the
+// eigenvector associated with it using Power Iterations.
+// Returns the eigentvector and the eigenvalue, respectively.
 func InversePowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	q_0 := Ones(mat.Rows, 1)
 
@@ -755,20 +757,20 @@ func InversePowerMethod(mat *Matrix, n int) (*Matrix, float64) {
 	L, U := mat.ApplyLUDecomposition()
 
 	for i := 0; i < n; i++ {
-		//z_k, _ := mat.Multiply(q_k)
 		temp_k := ForwardSubstitution(L, q_k)
 		q_k = BackSubstitution(U, temp_k)
 
 		lambda_k = q_k.Max()
 
 		q_k, _ = q_k.MultiplyByScalar(1 / lambda_k)
-
-		//q_k, _ = q_k.MultiplyByScalar(1 / q_k.Norm())
 	}
 
 	return q_k, lambda_k
 }
 
+// Calculates the QR decomposition of a Matrix using Gram-Schmidt
+// The returned values are the orthonormal Q(m,m) and R(m, n)
+// such that A = QR
 func (mat *Matrix) QRGramSchmidt() (*Matrix, *Matrix) {
 	n := mat.Rows
 	m := mat.Cols
@@ -801,11 +803,18 @@ func (mat *Matrix) QRGramSchmidt() (*Matrix, *Matrix) {
 	return Q, R
 }
 
+// Calculates the EigenValues and Eigenvectors
+// of a symmetric matrix. The returned values
+// are Upper diagonal matrix with the eigenvalues
+// at the diagonal and a Matrix with the eigenvectors
+// as the columns
 func (mat *Matrix) SymmetricEigenValues() (*Matrix, *Matrix) {
 	A := mat.Copy()
 	Q := Eye(mat.Rows, mat.Rows)
 
 	T_k, H := A.HouseholderTridiagonalization()
+
+	T_k.Print()
 
 	for i := 0; i < 20; i++ {
 		Q_k, R := T_k.QRGramSchmidt()
@@ -817,22 +826,12 @@ func (mat *Matrix) SymmetricEigenValues() (*Matrix, *Matrix) {
 
 	P, _ := H.Multiply(Q)
 
-	// x_0 := P.Col(0)
-	// lambda_0 := T_k.Coef[0][0]
-
-	// value_1, _ := A.Multiply(x_0)
-
-	// value_2, _ := x_0.MultiplyByScalar(lambda_0)
-
-	// fmt.Println(value_1.Coef[0][0])
-	// fmt.Println(value_2.Coef[0][0])
-
 	return T_k, P
-
-	//fmt.Printf("%v", *P)
-	//fmt.Printf("%v", *R)
 }
 
+// Calculates the EigenValues of a symmetric matrix. Using QR iterations
+// Returns the Upper diagonal matrix with the eigenvalues
+// at the diagonal
 func (mat *Matrix) SymmetricEigenValuesBad() *Matrix {
 	A := mat.Copy()
 
@@ -846,10 +845,67 @@ func (mat *Matrix) SymmetricEigenValuesBad() *Matrix {
 		Q, _ = Q.Multiply(Q_k)
 	}
 
-	fmt.Printf("%v", *A)
-	//fmt.Printf("%v", *Q)
-
 	return A
+}
+
+// Calculates the EigenValues of a matrix. Using householder
+// method and calculates the eigenvalues using the Block Upper Triangular.
+// Returns the diagonal complex matrix with the eigenvalues.
+func (mat *Matrix) ASymmetricEigenValues() (*ComplexMatrix, *Matrix) {
+	A := mat.Copy()
+	Q := Eye(mat.Rows, mat.Rows)
+
+	C := NewComplex(A.Rows, A.Cols)
+
+	C = C.Zeros(A.Rows, A.Cols)
+
+	Hessen_k, H := A.HouseholderTridiagonalization()
+
+	for i := 0; i < 20; i++ {
+		Q_k, R := Hessen_k.QRGramSchmidt()
+
+		Hessen_k, _ = R.Multiply(Q_k)
+
+		Q, _ = Q.Multiply(Q_k)
+	}
+
+	if debug {
+		fmt.Println("--- Block Upper Triangular ---")
+		Hessen_k.Print()
+	}
+
+	for i := 0; i < A.Cols; i += 2 {
+		if i == A.Cols-1 {
+			l := complex(Hessen_k.Coef[i][i], 0.0)
+			C.Coef[i][i] = l
+			break
+		}
+
+		a := 1.0
+		b := -(Hessen_k.Coef[i][i] + Hessen_k.Coef[i+1][i+1])
+		c := (Hessen_k.Coef[i][i] * Hessen_k.Coef[i+1][i+1]) - (Hessen_k.Coef[i][i+1] * Hessen_k.Coef[i+1][i])
+
+		delta := math.Pow(b, 2) - 4*a*c
+
+		mod := math.Sqrt(math.Abs(delta))
+
+		var comp complex128
+		if delta >= 0.0 {
+			comp = complex(mod, 0.0)
+		} else {
+			comp = complex(0.0, mod)
+		}
+
+		l_1 := (complex(-b, 0.0) + comp) / complex(2*a, 0.0)
+		l_2 := (complex(-b, 0.0) - comp) / complex(2*a, 0.0)
+
+		C.Coef[i][i] = l_1
+		C.Coef[i+1][i+1] = l_2
+	}
+
+	P, _ := H.Multiply(Q)
+
+	return C, P
 }
 
 func (mat *Matrix) SVDDecomposition() {
@@ -858,8 +914,8 @@ func (mat *Matrix) SVDDecomposition() {
 	A_At, _ := A.Multiply(A.Tranpose())
 	At_A, _ := A.Tranpose().Multiply(A)
 
-	_, U := A_At.SymmetricEigenValues()
-	_, V := At_A.SymmetricEigenValues()
+	_, U := A_At.ASymmetricEigenValues()
+	_, V := At_A.ASymmetricEigenValues()
 
 	fmt.Printf("%v", *U)
 	fmt.Println()
@@ -896,10 +952,9 @@ func (mat *Matrix) Jacobi(rhs *Matrix) *Matrix {
 	return x_k
 }
 
-/**
-* Solves the linear systems of equation
-* The main diagonal should have non-zero entries
- */
+// Solves the linear systems of equation using Jacobi's method
+// Returns the solution vector.
+// The main diagonal should have non-zero entries.
 func (mat *Matrix) JacobiParallel(rhs *Matrix) *Matrix {
 	n := mat.Cols
 
@@ -937,6 +992,9 @@ func (mat *Matrix) JacobiParallel(rhs *Matrix) *Matrix {
 	return x_k
 }
 
+// Solves the linear systems of equation using Gauss-Seidel method
+// Returns the solution vector.
+// The main diagonal should have non-zero entries.
 func (mat *Matrix) GaussSeidel(rhs *Matrix) *Matrix {
 	stopCriteria := 20
 	n := mat.Cols
@@ -962,6 +1020,9 @@ func (mat *Matrix) GaussSeidel(rhs *Matrix) *Matrix {
 	return sol_k
 }
 
+// Solves the linear systems of equation using Successive Over Relaxation (SOR)
+// Returns the solution vector.
+// The main diagonal should have non-zero entries.
 func (mat *Matrix) SOR(rhs *Matrix) *Matrix {
 	stopCriteria := 20
 	n := mat.Cols
