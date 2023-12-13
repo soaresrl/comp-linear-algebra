@@ -604,6 +604,81 @@ func Householder(vector *Matrix) *Matrix {
 	return H
 }
 
+func HouseholderK(vector *Matrix, k int) *Matrix {
+	n := vector.Rows
+
+	v := Zeros(n, 1)
+
+	for i := k; i < n; i++ {
+		v.Coef[i][0] = vector.Coef[i][0]
+	}
+
+	e := Zeros(n, 1)
+	e.Coef[k][0] = v.Norm()
+
+	u, _ := e.Subtract(v)
+
+	u, _ = u.MultiplyByScalar(1 / u.Norm())
+
+	u_ut, _ := u.Multiply(u.Tranpose())
+
+	u_ut_2, _ := u_ut.MultiplyByScalar(2.0)
+
+	H, _ := Eye(vector.Rows, vector.Rows).Subtract(u_ut_2)
+
+	return H
+}
+
+// Compute the Householder matrix
+// H = I - 2uuᵀ/uᵀu -> Hx = v (reflected)
+func HouseholderK2(vector *Matrix, k int) *Matrix {
+	v_norm := math.Sqrt(Dot(vector, vector))
+
+	e_1 := Zeros(vector.Rows, 1)
+
+	for i := 0; i <= k; i++ {
+		e_1.Coef[i][0] = 1.0
+	}
+
+	v_norm_e1, _ := e_1.MultiplyByScalar(v_norm)
+
+	u, _ := vector.Subtract(v_norm_e1)
+
+	u_norm := math.Sqrt(Dot(u, u))
+
+	v_1, _ := u.MultiplyByScalar(1 / u_norm)
+
+	v1_v1_t, _ := v_1.Multiply(v_1.Tranpose())
+
+	v1_v1_t_2, _ := v1_v1_t.MultiplyByScalar(2.0)
+
+	H, _ := Eye(vector.Rows, vector.Rows).Subtract(v1_v1_t_2)
+
+	return H
+}
+
+func (mat *Matrix) HouseholderTridiagonalization() (*Matrix, *Matrix) {
+	A := mat.Copy()
+
+	n := mat.Cols
+
+	H := Eye(n, n)
+
+	for j := 0; j < n-2; j++ {
+		v := mat.Col(j)
+
+		H_k := HouseholderK(v, j+1)
+
+		H, _ = H.Multiply(H_k)
+
+		temp, _ := H_k.Multiply(A)
+
+		A, _ = temp.Multiply(H_k.Tranpose())
+	}
+
+	return A, H
+}
+
 func Diag(first *Matrix, second *Matrix) *Matrix {
 	m := first.Rows + second.Rows
 	n := first.Cols + second.Cols
@@ -724,6 +799,71 @@ func (mat *Matrix) QRGramSchmidt() (*Matrix, *Matrix) {
 	}
 
 	return Q, R
+}
+
+func (mat *Matrix) SymmetricEigenValues() (*Matrix, *Matrix) {
+	A := mat.Copy()
+	Q := Eye(mat.Rows, mat.Rows)
+
+	T_k, H := A.HouseholderTridiagonalization()
+
+	for i := 0; i < 20; i++ {
+		Q_k, R := T_k.QRGramSchmidt()
+
+		T_k, _ = R.Multiply(Q_k)
+
+		Q, _ = Q.Multiply(Q_k)
+	}
+
+	P, _ := H.Multiply(Q)
+
+	// x_0 := P.Col(0)
+	// lambda_0 := T_k.Coef[0][0]
+
+	// value_1, _ := A.Multiply(x_0)
+
+	// value_2, _ := x_0.MultiplyByScalar(lambda_0)
+
+	// fmt.Println(value_1.Coef[0][0])
+	// fmt.Println(value_2.Coef[0][0])
+
+	return T_k, P
+
+	//fmt.Printf("%v", *P)
+	//fmt.Printf("%v", *R)
+}
+
+func (mat *Matrix) SymmetricEigenValuesBad() *Matrix {
+	A := mat.Copy()
+
+	Q := Eye(A.Rows, A.Cols)
+
+	for i := 0; i < 20; i++ {
+		Q_k, R := A.QRGramSchmidt()
+
+		A, _ = R.Multiply(Q_k)
+
+		Q, _ = Q.Multiply(Q_k)
+	}
+
+	fmt.Printf("%v", *A)
+	//fmt.Printf("%v", *Q)
+
+	return A
+}
+
+func (mat *Matrix) SVDDecomposition() {
+	A := mat.Copy()
+
+	A_At, _ := A.Multiply(A.Tranpose())
+	At_A, _ := A.Tranpose().Multiply(A)
+
+	_, U := A_At.SymmetricEigenValues()
+	_, V := At_A.SymmetricEigenValues()
+
+	fmt.Printf("%v", *U)
+	fmt.Println()
+	fmt.Printf("%v", *V.Tranpose())
 }
 
 func (mat *Matrix) Jacobi(rhs *Matrix) *Matrix {

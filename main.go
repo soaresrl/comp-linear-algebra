@@ -26,10 +26,37 @@ func TestRREF() {
 	fmt.Printf("Dimension of Null(A): %d\n", nullDim)
 }
 
+func TestEigen() {
+	A := matrix.NewRealMatrix(2, 2)
+
+	// arr := [][]float64{
+	// 	{30, 6, 5},
+	// 	{6, 30, 9},
+	// 	{5, 9, 30},
+	// }
+
+	arr := [][]float64{
+		{3.0, 2.0},
+		{2.0, 3.0},
+	}
+
+	// arr := [][]float64{
+	// 	{4.0, 3.0},
+	// 	{8.0, 6.0},
+	// }
+
+	A.FromArray(arr)
+
+	A.SVDDecomposition()
+
+	//A.SimmetricEigenValues()
+}
+
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	TestRREF()
+	//TestRREF()
+	TestEigen()
 	// arr := [][]float64{
 	// 	{1, 4, 7},
 	// 	{2, 5, 8},
